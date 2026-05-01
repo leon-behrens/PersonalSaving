@@ -9,3 +9,6 @@ venv/
 finance.db
 *.log
 .github/
+.pdf
+resources/
+.db

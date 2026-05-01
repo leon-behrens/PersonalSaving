@@ -12,3 +12,5 @@ finance.db
 .pdf
 resources/
 .db
+.idea/
+.DS_Store

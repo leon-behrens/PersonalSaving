@@ -180,8 +180,9 @@ accidentally exposed port does not expose the user's finances.
 
 ### 7.6 Categorisation
 
-- **FR-CAT-1:** The user can create, rename, delete and nest categories. Each
-  category has a kind: income, expense or transfer.
+- **FR-CAT-1:** Categories form exactly two levels: a group containing
+  categories (ADR 0010). Each category has a kind: income, expense or transfer.
+  The user can create, rename, reparent and delete groups and categories.
 - **FR-CAT-2:** A category rule matches a pattern (substring or regular
   expression) against a transaction's description or counterparty and assigns a
   category.
@@ -198,6 +199,9 @@ accidentally exposed port does not expose the user's finances.
   transactions it would match.
 - **FR-CAT-8:** The dashboard surfaces the count of uncategorised transactions
   and links directly to them.
+- **FR-CAT-9:** Transactions attach only to leaf categories. Assigning a
+  transaction directly to a group is rejected at the schema and API level, so
+  that a group total is always exactly the sum of its categories.
 
 ### 7.7 Transfers Between Own Accounts
 
@@ -385,11 +389,12 @@ Candidates for later versions, deliberately excluded from V1:
 
 ## 11. Open Questions
 
+Q2 and Q3 have been resolved; see [ADR 0009](adr/0009-credit-cards-as-negative-balance-accounts.md)
+and [ADR 0010](adr/0010-two-level-category-hierarchy.md). Numbering is retained.
+
 | # | Question | Impact |
 |---|---|---|
 | Q1 | Which specific Swiss bank CSV formats ship as built-in profiles in V1? | Determines import work; needs real sample exports to answer. |
-| Q2 | Should credit card accounts be modelled as negative-balance accounts, or as a distinct type with its own settlement logic? | Affects the account model and net-worth calculation. |
-| Q3 | Is a hierarchical category tree needed in V1, or is a flat list with a transfer kind sufficient? | Hierarchy complicates every aggregate query. |
 | Q4 | Should an import batch retain the original uploaded file for audit, and if so for how long? | Privacy versus traceability. |
 | Q5 | What happens to goals and rules when their linked account is deleted? | Needs an explicit cascade or block policy. |
 

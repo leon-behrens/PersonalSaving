@@ -67,8 +67,11 @@ Deliberately excluded, to be built on top later:
       (no financial data in logs) established from the beginning
 - [ ] `/api/v1` route prefix in place, so versioning exists before there is
       anything to version
-- [ ] `GET /api/v1/health` returning application status and a real database
-      round-trip (`SELECT 1`), satisfying `NFR-OPS-5`
+- [ ] `GET /api/health` returning application status and a real database
+      round-trip (`SELECT 1`), satisfying `NFR-OPS-5`. Deliberately outside the
+      version prefix: a container healthcheck or reverse proxy should not need
+      to know the API version, and the endpoint must not move when `/api/v2`
+      appears
 - [ ] Run uvicorn with `--proxy-headers`, and keep the external base URL
       configurable, so a reverse proxy can be added later without code changes
 
@@ -96,7 +99,7 @@ Deliberately excluded, to be built on top later:
 - [ ] `asyncio_mode = auto` so tests need no per-test decorator
 - [ ] Test database fixture: separate database, migrations applied, torn down
       afterwards
-- [ ] One test calling `GET /api/v1/health` through `httpx.AsyncClient` and
+- [ ] One test calling `GET /api/health` through `httpx.AsyncClient` and
       asserting both the status code and the reported database state
 - [ ] Coverage reporting configured but not yet enforced
 
@@ -120,7 +123,7 @@ Deliberately excluded, to be built on top later:
 Each of these is checkable, on a clean machine, from a fresh clone:
 
 1. `docker compose up` brings the stack up with no manual steps.
-2. `GET /api/v1/health` returns `200` and reports the database as reachable.
+2. `GET /api/health` returns `200` and reports the database as reachable.
 3. `alembic upgrade head` followed by `alembic downgrade base` both succeed.
 4. `pytest` passes.
 5. `ruff check`, `ruff format --check` and `mypy` all report clean.

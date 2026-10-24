@@ -75,3 +75,7 @@ Generated automatically from your data:
 
 - Docker Compose (application and PostgreSQL)
 - Hosting: localhost
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).

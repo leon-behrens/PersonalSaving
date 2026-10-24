@@ -1,14 +1,16 @@
+from typing import Literal
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 
 class HealthResponse(BaseModel):
-    status: str
+    status: Literal["ok"]
 
 
 router = APIRouter()
 
 
-@router.get("/health", response_model=HealthResponse)
-def health() -> dict[str, str]:
-    return {"status": "OK"}
+@router.get("/health")
+async def health() -> HealthResponse:
+    return HealthResponse(status="ok")

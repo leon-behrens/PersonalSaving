@@ -1,11 +1,16 @@
-from fastapi import APIRouter, FastAPI
+from importlib.metadata import version
 
-from personalsaving.api.health import router as api_health
+from fastapi import FastAPI
+
+from personalsaving.api.health import router as health_router
+from personalsaving.api.v1.router import router as v1_router
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="PersonalSaving", version="0.1.0")
-    app.include_router(api_health)
-    api_v1_router = APIRouter(prefix="/api/v1")
-    app.include_router(api_v1_router)
+    app = FastAPI(title="PersonalSaving", version=version("personalsaving"))
+
+    app.include_router(health_router, prefix="/api", tags=["health"])
+
+    app.include_router(v1_router, prefix="/api/v1")
+
     return app

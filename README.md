@@ -76,6 +76,10 @@ Generated automatically from your data:
 - Docker Compose (application and PostgreSQL)
 - Hosting: localhost
 
+## Development
+
+See [`backend/README.md`](backend/README.md) for backend setup and commands.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).

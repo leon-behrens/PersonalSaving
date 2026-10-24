@@ -100,7 +100,12 @@ accidentally exposed port does not expose the user's finances.
   short-lived JWT access token plus a longer-lived refresh token.
 - **FR-AUTH-5:** All endpoints except login, token refresh and health require a
   valid access token.
-- **FR-AUTH-6:** Failed login attempts are rate limited.
+- **FR-AUTH-6:** Failed login attempts are rate limited by exponential backoff,
+  not by account lockout. Failures are counted globally rather than per client
+  address, since the deployment has exactly one user and per-address counting is
+  trivially bypassed by rotating addresses. The delay grows with consecutive
+  failures up to a cap and resets on success. Lockout is explicitly rejected: it
+  would let an attacker deny the legitimate user access to their own finances.
 - **FR-AUTH-7:** The user can change their password from the UI.
 
 ### 7.2 Accounts
@@ -163,6 +168,10 @@ accidentally exposed port does not expose the user's finances.
   as duplicates, and failed.
 - **FR-IMP-9:** An import batch can be reverted, removing exactly the
   transactions it created.
+- **FR-IMP-10:** Uploads are bounded by a maximum file size, a maximum row count
+  and a parse timeout, all configurable. The limits are enforced before the file
+  is read into memory, and exceeding one returns an error naming the limit and
+  its value.
 
 > **Rationale for FR-IMP-7.** Users re-download statements with overlapping date
 > ranges as a matter of course. Without deduplication the second import silently
@@ -263,6 +272,17 @@ accidentally exposed port does not expose the user's finances.
   disabled, the application makes no outbound network requests whatsoever.
 - **FR-FX-10:** Exchange rates are stored with sufficient precision to avoid
   rounding drift, and conversion results are rounded only for display.
+- **FR-FX-11:** Rate synchronisation records the date ranges already retrieved
+  per currency pair, rather than the individual dates held, and rate lookup
+  resolves to the most recent rate on or before the requested date. Reference
+  rates are not published on weekends and holidays, so logic that fetches "any
+  date without a rate" would request those dates indefinitely. A missing range
+  is retrieved as one time-series request per currency pair, never one request
+  per date.
+- **FR-FX-12:** The exchange rate client honours HTTP 429 and `Retry-After`,
+  retries with exponential backoff up to a fixed cap, and applies a hard request
+  timeout. On exhaustion it falls back to FR-FX-8. Rate retrieval never blocks an
+  import, a categorisation run or a page load.
 
 > **Rationale for FR-FX-6.** Converting a 2024 transaction at today's rate means
 > last year's grocery spending changes every morning. Storing rate-by-date costs
@@ -341,6 +361,16 @@ accidentally exposed port does not expose the user's finances.
   calculations have unit tests with explicit edge cases.
 - **NFR-QUAL-3:** Type checking passes in strict mode. Linting and formatting
   are enforced before commit.
+
+### 8.6 Security
+
+- **NFR-SEC-1:** V1 implements no general per-endpoint rate limiting. The
+  deployment serves a single user, by default on localhost, where such limiting
+  defends against nothing realistic while adding middleware, shared state and
+  new failure modes. Login backoff (FR-AUTH-6) and upload limits (FR-IMP-10) are
+  the deliberate exceptions, because each bounds a specific abuse path. A
+  deployment exposed beyond localhost should rate limit at the reverse proxy,
+  not in the application.
 
 ## 9. API Surface (indicative)
 

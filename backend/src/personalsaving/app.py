@@ -14,11 +14,11 @@ def create_app() -> FastAPI:
     configure_logging(settings)
     logger = logging.getLogger(__name__)
 
-    logger.info("Logger instanciated.")
-
     logger.info("Starting environment=%s", settings.environment_name)
 
-    app = FastAPI(title="PersonalSaving", version=version("personalsaving"))
+    servers = [{"url": settings.external_base_url}]
+
+    app = FastAPI(title="PersonalSaving", version=version("personalsaving"), servers=servers)
 
     app.include_router(health_router, prefix="/api", tags=["health"])
 

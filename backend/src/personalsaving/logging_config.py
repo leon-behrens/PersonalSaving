@@ -6,9 +6,11 @@ from personalsaving.settings import Settings
 def configure_logging(settings: Settings) -> None:
 
     if settings.environment_name == "production":
-        log_format = ""
+        raise ValueError(f"No log fomat specified for env: {settings.environment_name}.")
     elif settings.environment_name == "development":
         log_format = "%(levelprefix)s %(name)s: %(message)s"
+    else:
+        raise ValueError(f"No log fomat specified for env: {settings.environment_name}.")
 
     config = {
         "version": 1,

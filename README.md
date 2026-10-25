@@ -2,7 +2,7 @@
 
 PersonalSaving (PS) is a web application to inspect, transform and track your spending, bank accounts and saving goals. Bank records are imported from CSV exports, and a local dashboard shows your accounts, spending trends and progress toward your saving goals.
 
-**Status: Planning** Design phase
+**Status: Planning** Implementation phase
 
 ## Goal
 

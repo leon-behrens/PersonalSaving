@@ -37,6 +37,7 @@ containerise cleanly.
 - Test harness with one real test
 - Continuous integration
 - Developer setup instructions
+- Architecture documentation and diagrams
 
 ## Out of scope
 
@@ -51,39 +52,42 @@ Deliberately excluded, to be built on top later:
 
 ### 1. Repository and tooling
 
-- [ ] Initialise the project with `uv`; pin the Python version
-- [ ] `pyproject.toml` with separate main and dev dependency groups
-- [ ] Configure `ruff` for both linting and formatting
-- [ ] Configure `mypy` in strict mode
-- [ ] `pre-commit` hooks: ruff, ruff-format, mypy
-- [ ] `.env.example` listing every variable with a safe default or a placeholder
+- [x] Initialise the project with `uv`; pin the Python version
+- [x] `pyproject.toml` with separate main and dev dependency groups
+- [x] Configure `ruff` for both linting and formatting
+- [x] Configure `mypy` in strict mode
+- [x] `pre-commit` hooks: ruff, ruff-format, mypy
+- [x] `.env.example` listing every variable with a safe default or a placeholder
 
 ### 2. Application skeleton
 
-- [ ] FastAPI application factory
-- [ ] `pydantic-settings` configuration object: database URL, environment, log
+- [x] FastAPI application factory
+- [x] `pydantic-settings` configuration object: database URL, environment, log
       level, external base URL
-- [ ] Structured logging configured at startup, with the `NFR-PRIV-4` rule
-      (no financial data in logs) established from the beginning
-- [ ] `/api/v1` route prefix in place, so versioning exists before there is
+- [x] Structured logging configured at startup, with the `NFR-PRIV-4` rule
+      (no financial data in logs) established from the beginning —
+      **development format only; the production branch currently raises**
+- [x] `/api/v1` route prefix in place, so versioning exists before there is
       anything to version
-- [ ] `GET /api/health` returning application status and a real database
+- [x] `GET /api/health` returning application status and a real database
       round-trip (`SELECT 1`), satisfying `NFR-OPS-5`. Deliberately outside the
       version prefix: a container healthcheck or reverse proxy should not need
       to know the API version, and the endpoint must not move when `/api/v2`
       appears
 - [ ] Run uvicorn with `--proxy-headers`, and keep the external base URL
-      configurable, so a reverse proxy can be added later without code changes
+      configurable, so a reverse proxy can be added later without code changes —
+      the `servers` block is wired to `EXTERNAL_BASE_URL`; `--proxy-headers`
+      lands with the container command in task 4
 
 ### 3. Database and migrations
 
-- [ ] PostgreSQL service in Compose, with a named volume for its data
-- [ ] Async SQLAlchemy 2.0 engine and a session dependency
-- [ ] `alembic init`, configured for async operation and pointed at the
+- [x] PostgreSQL service in Compose, with a named volume for its data
+- [x] Async SQLAlchemy 2.0 engine and a session dependency
+- [x] `alembic init`, configured for async operation and pointed at the
       declarative metadata for autogenerate
-- [ ] Baseline migration, applied against an empty database
-- [ ] Verify `alembic upgrade head` and `alembic downgrade base` both succeed
-- [ ] Decide and document how migrations run on startup
+- [x] Baseline migration, applied against an empty database
+- [x] Verify `alembic upgrade head` and `alembic downgrade base` both succeed
+- [x] Decide and document how migrations run on startup
 
 ### 4. Containerisation
 
@@ -116,7 +120,32 @@ Deliberately excluded, to be built on top later:
 ### 7. Documentation
 
 - [ ] README section: prerequisites, setup, running, testing
-- [ ] Every environment variable documented in `.env.example`
+- [x] Every environment variable documented in `.env.example`
+
+### 8. Architecture documentation
+
+- [ ] `docs/architecture.md`, with the diagrams exported to an accompanying PDF
+- [ ] **Architecture diagram** — the deployment shape: browser, reverse proxy
+      (future), API container, PostgreSQL container, and the single outbound
+      call to the exchange rate API
+- [ ] **Component diagram** — the backend's internal structure: application
+      factory, routers, settings, database layer, and where the import,
+      categorisation and currency services will sit
+- [ ] **Sequence diagram** — at minimum the CSV import flow (upload → preview →
+      deduplicate → confirm → insert), the most involved interaction in the
+      product
+- [ ] **Data flow diagram** — where financial data is stored and which
+      boundaries it crosses. This one doubles as evidence for the privacy
+      claims in `SECURITY.md`: it should make visible that nothing but currency
+      codes and dates leaves the machine
+
+Keep the diagram **source** in the repository as text — Mermaid in the Markdown,
+or PlantUML beside it — and treat the PDF as a rendered artefact. Diagrams drawn
+in a GUI tool and committed as images stop being updated, because editing them
+is a chore and the diff is unreadable.
+
+Note that `.gitignore` currently excludes `*.pdf`, so a committed export needs
+an explicit negation.
 
 ## Definition of done
 

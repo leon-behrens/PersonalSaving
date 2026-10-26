@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | Planning |
+| **Status** | Implementation |
 | **Version** | 0.1 (draft) |
-| **Last updated** | 2026-10-24 |
+| **Last updated** | 2026-10-25 |
 | **Owner** | Leon Behrens |
 
 ---

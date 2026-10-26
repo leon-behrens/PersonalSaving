@@ -33,3 +33,4 @@ Copy [`template.md`](template.md) to start a new record.
 | [0008](0008-saving-goals-linked-to-account.md) | Saving goal progress derived from a linked account balance | Accepted |
 | [0009](0009-credit-cards-as-negative-balance-accounts.md) | Credit cards as ordinary negative-balance accounts | Accepted |
 | [0010](0010-two-level-category-hierarchy.md) | Exactly two category levels, transactions on leaves only | Accepted |
+| [0011](0011-migrations-run-before-the-api-starts.md) | Migrations run as a one-shot container before the API starts | Proposed |

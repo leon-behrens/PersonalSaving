@@ -17,11 +17,11 @@ class Settings(BaseSettings):
 
     environment_name: Literal["development", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
-    external_base_url: str = "http://localhost:4455"
+    external_base_url: str = "http://127.0.0.1:4455"
 
     postgres_user: str = "personalsaving"
     postgres_db: str = "personalsaving"
-    postgres_host: str = "localhost"
+    postgres_host: str = "127.0.0.1"
     postgres_port: int = 5432
 
     @property

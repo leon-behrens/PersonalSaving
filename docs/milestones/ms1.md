@@ -74,10 +74,11 @@ Deliberately excluded, to be built on top later:
       version prefix: a container healthcheck or reverse proxy should not need
       to know the API version, and the endpoint must not move when `/api/v2`
       appears
-- [ ] Run uvicorn with `--proxy-headers`, and keep the external base URL
+- [x] Run uvicorn with `--proxy-headers`, and keep the external base URL
       configurable, so a reverse proxy can be added later without code changes —
-      the `servers` block is wired to `EXTERNAL_BASE_URL`; `--proxy-headers`
-      lands with the container command in task 4
+      note that `--forwarded-allow-ips` is currently scoped to the container's
+      own loopback, so forwarded headers are rejected until a real proxy exists
+      and the value is widened to its address
 
 ### 3. Database and migrations
 
@@ -91,11 +92,14 @@ Deliberately excluded, to be built on top later:
 
 ### 4. Containerisation
 
-- [ ] `Dockerfile` for the API, multi-stage, installing via `uv`
-- [ ] `.dockerignore`
-- [ ] `docker-compose.yml` bringing up API and database together
-- [ ] Database healthcheck plus `depends_on: condition: service_healthy`, so
-      the API does not race the database on startup
+- [x] `Dockerfile` for the API, multi-stage, installing via `uv`, with a
+      non-editable install so the image carries no source tree
+- [x] `.dockerignore`
+- [x] `compose.yaml` bringing up API, database and the one-shot migration
+      service from [ADR 0011](../adr/0011-migrations-run-before-the-api-starts.md)
+- [x] Database healthcheck plus `depends_on: condition: service_healthy`, so
+      the API does not race the database on startup, and
+      `service_completed_successfully` so it does not race the migration
 
 ### 5. Test harness
 

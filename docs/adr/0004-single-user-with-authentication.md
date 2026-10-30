@@ -1,6 +1,6 @@
 # ADR 0004: One user per deployment, with full authentication
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR 0012](0012-versioned-user-model-and-administrator-boundary.md)
 - **Date:** 2026-10-24
 - **Supersedes:** —
 

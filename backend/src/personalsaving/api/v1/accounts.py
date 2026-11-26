@@ -4,8 +4,9 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 import pycountry
-from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from sqlalchemy import select
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from stdnum import iban
@@ -94,6 +95,21 @@ class AccountResponse(BaseModel):
     updated_at: datetime
 
 
+class AccountGet(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    limit: int = Field(default=50, ge=1, le=200)
+    offset: int = Field(default=0, ge=0)
+    archived: bool = False
+
+
+class AccountListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    items: list[AccountResponse]
+    limit: int
+    offset: int
+    has_more: bool
+
+
 router = APIRouter()
 
 
@@ -129,10 +145,62 @@ async def create_account(
     except ValidationError as exc:
         await db.rollback()
         raise HTTPException(status_code=500, detail="Validating the Datamodel failed") from exc
-    except Exception as exc:
-        await db.rollback()
-        raise HTTPException(status_code=500, detail="Some unidentified error occured") from exc
 
     response.headers["location"] = f"/api/v1/accounts/{new_account.id}"
 
     return result
+
+
+@router.get("/accounts/{account_id}", status_code=200)
+async def get_account(db: Annotated[AsyncSession, Depends(get_db)], account_id: UUID) -> AccountResponse:
+    try:
+        account = await db.get(Account, account_id)
+        if account is None:
+            raise HTTPException(status_code=404, detail="Account not found")
+        result = AccountResponse.model_validate(account)
+    except OperationalError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=503, detail="Database operation failed") from exc
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Database operation failed") from exc
+    except ValidationError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Validating the Datamodel failed") from exc
+
+    return result
+
+
+@router.get("/accounts", status_code=200)
+async def list_accounts(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    account_get: Annotated[AccountGet, Query()],
+) -> AccountListResponse:
+
+    statement = (
+        select(Account)
+        .where(Account.archived == account_get.archived)
+        .order_by(Account.name, Account.account_type, Account.id)
+        .offset(account_get.offset)
+        .limit(account_get.limit + 1)
+    )
+
+    try:
+        accounts = await db.execute(statement)
+        rows = accounts.scalars().all()
+        page = rows[: account_get.limit]
+        return AccountListResponse(
+            items=[AccountResponse.model_validate(account) for account in page],
+            limit=account_get.limit,
+            offset=account_get.offset,
+            has_more=len(rows) > account_get.limit,
+        )
+    except OperationalError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=503, detail="Database operation failed") from exc
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Database operation failed") from exc
+    except ValidationError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Validating the Datamodel failed") from exc

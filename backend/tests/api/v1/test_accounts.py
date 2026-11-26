@@ -1,17 +1,18 @@
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pycountry
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from personalsaving.api.v1.accounts import AccountCreate
+from personalsaving.api.v1.accounts import AccountCreate, AccountResponse
 from personalsaving.models import Account
 
 
@@ -477,18 +478,16 @@ async def test_create_account_rolls_back_database_failures_without_leaking_detai
     existing_id = existing.id
     sensitive_details = "host=private-db port=5432 user=secret-user password=secret-password"
 
-    async def fail_commit() -> None:
-        # Flushing inserts a real row inside the test transaction. The handler's
-        # rollback must remove it, even though the exception occurs afterward.
-        if failure_point == "after_flush":
-            await db_session.flush()
+    async def fail_write() -> None:
         if database_unavailable:
             raise OperationalError("INSERT INTO accounts", {}, OSError(sensitive_details))
         raise SQLAlchemyError(sensitive_details)
 
     rollback = AsyncMock(wraps=db_session.rollback)
     with monkeypatch.context() as patch:
-        patch.setattr(db_session, "commit", fail_commit)
+        # Fail either before insertion or after the handler has flushed its row.
+        failing_method = "flush" if failure_point == "before_flush" else "commit"
+        patch.setattr(db_session, failing_method, fail_write)
         patch.setattr(db_session, "rollback", rollback)
         response = await client.post(
             "/api/v1/accounts",
@@ -509,3 +508,46 @@ async def test_create_account_rolls_back_database_failures_without_leaking_detai
     assert (
         await db_session.scalar(select(func.count()).select_from(Account).where(Account.name == "Failed account")) == 1
     )
+
+
+async def test_create_account_response_validation_failure_rolls_back_insert(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    existing = Account(
+        name="Existing account",
+        opening_date=date(2026, 10, 10),
+        opening_balance=Decimal(25),
+        balance=Decimal(25),
+    )
+    db_session.add(existing)
+    await db_session.commit()
+    existing_id = existing.id
+    private_name = "private-financial-name"
+    with pytest.raises(ValidationError) as validation:
+        AccountResponse.model_validate({"name": private_name})
+
+    failed_response = Mock(side_effect=validation.value)
+    flush = AsyncMock(wraps=db_session.flush)
+    commit = AsyncMock(wraps=db_session.commit)
+    rollback = AsyncMock(wraps=db_session.rollback)
+    with monkeypatch.context() as patch:
+        patch.setattr(AccountResponse, "model_validate", failed_response)
+        patch.setattr(db_session, "flush", flush)
+        patch.setattr(db_session, "commit", commit)
+        patch.setattr(db_session, "rollback", rollback)
+        response = await client.post("/api/v1/accounts", json={"name": "Failed account", "opening_date": "2026-10-10"})
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Validating the Datamodel failed"}
+        flush.assert_awaited_once()
+        failed_response.assert_called_once()
+        commit.assert_not_awaited()
+        rollback.assert_awaited_once()
+
+    assert "location" not in response.headers
+    assert private_name not in response.text
+    assert "Traceback" not in response.text
+    accounts = (await db_session.execute(select(Account))).scalars().all()
+    assert [account.id for account in accounts] == [existing_id]
+    retry = await client.post("/api/v1/accounts", json={"name": "Failed account", "opening_date": "2026-10-10"})
+    assert retry.status_code == 201
+    assert await db_session.scalar(select(func.count()).select_from(Account)) == 2

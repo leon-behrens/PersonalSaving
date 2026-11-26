@@ -1,6 +1,6 @@
 # ADR 0007: Rule-based categorisation with locked manual overrides
 
-- **Status:** Accepted
+- **Status:** Superseded for post-creation overrides and rule reapplication by [ADR 0013](0013-immutable-transactions-and-maintained-balances.md)
 - **Date:** 2026-10-24
 - **Supersedes:** —
 

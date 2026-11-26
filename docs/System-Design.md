@@ -398,59 +398,13 @@ sequenceDiagram
     Note over FX,Provider: No amounts, descriptions, account IDs or balances leave the backend.
 ```
 
-### 4.6 Edit a transaction's category
+### 4.6 Categorisation before immutable transaction creation
 
-ADR 0007 requires manual category changes to lock the transaction against later
-rule runs. Updating the category and setting the lock are one atomic operation.
-The rule-run endpoint below is a proposed target contract.
-
-```mermaid
----
-config:
-  theme: redux-color
-  look: neo
----
-sequenceDiagram
-    autonumber
-    actor User
-    participant Client as Browser
-    participant API as Backend API
-    participant Categories as Categorisation service
-    participant DB as PostgreSQL
-
-    User->>Client: Select a category for a transaction
-    Client->>API: PATCH /api/v1/transactions/{transaction_id}<br/>JSON: category_id
-    API->>API: Authenticate and validate request
-    API->>Categories: Set manual category for authenticated user
-    Categories->>DB: Begin transaction<br/>Load and lock authorized transaction<br/>Validate category access
-    DB-->>Categories: Transaction and category, or missing resource
-    alt Transaction or category unavailable
-        Categories->>DB: Roll back
-        Categories-->>API: Resource unavailable
-        API-->>Client: 404 <br> Resource not found
-    else Resources accessible
-        Categories->>DB: Set category_id and category_locked=true
-        Categories->>DB: Commit
-        DB-->>Categories: Commit succeeded
-        Categories-->>API: Updated transaction
-        API-->>Client: 200 <br> Transaction with manual-category lock
-        Client-->>User: Display category and locked indicator
-    end
-
-    opt User later reapplies categorisation rules
-        User->>Client: Apply categorisation rules
-        Client->>API: POST /api/v1/categorisation-runs
-        API->>Categories: Apply rules to authorized transactions
-        Categories->>DB: Begin transaction and process unlocked transactions<br/>Preserve lock checks when writing
-        Categories->>Categories: First matching rule in priority order wins<br/>Otherwise use Uncategorised
-        Categories->>DB: Save categories and commit
-        DB-->>Categories: Commit succeeded
-        Categories-->>API: Updated and skipped-locked counts
-        API-->>Client: 200 <br>Categorisation result
-        Client-->>User: Show result<br/>Manual choices remain unchanged
-    end
-    Note over Categories,DB: A concurrent manual edit must not be overwritten.<br/>Database failures roll back the operation and return safe errors.
-```
+Following ADR 0013, categories and notes are selected before creating a transaction.
+Rules can suggest a category during preview or manual entry. Confirmation freezes
+the category together with the other recorded facts. Existing transactions cannot
+be edited or recategorized. The earlier category-edit workflow and historical rule
+reapplication are superseded. Corrections use new reversing and replacement entries.
 
 ### 4.7 Create or update a savings goal
 
@@ -594,7 +548,7 @@ Transaction search carries them in its JSON body. List responses have this shape
 queried; it does not promise a stable snapshot across separate requests. Sorting
 uses documented allowlisted fields, with an ID as the final tie-breaker so equal
 sort values have deterministic ordering. Transaction lists default to booking
-date descending, then ID descending. The endpoint schema defines the concrete
+date descending, then the persistent same-day sequence descending (ADR 0013). The endpoint schema defines the concrete
 sort parameter representation.
 
 Offset pagination is sufficient for the expected initial dataset and supports
@@ -776,12 +730,12 @@ implementation, rather than inferred from this table.
 #### Bank accounts
 
 | Method | Path | Purpose | Success |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `GET` | `/accounts` | List the user's bank accounts; support archived-state filtering | 200 |
 | `POST` | `/accounts` | Create a bank account | 201 |
 | `GET` | `/accounts/{account_id}` | Retrieve an account | 200 |
 | `PATCH` | `/accounts/{account_id}` | Update account fields, including archive/unarchive state | 200 |
-| `DELETE` | `/accounts/{account_id}` | Delete an account and its transactions | 204; dependency policy pending |
+| `DELETE` | `/accounts/{account_id}` | Reserved; immutable history must be preserved | Deferred |
 
 Account deletion is deferred in section 4.8. Its route is reserved, but dependency
 handling and confirmation must be resolved before implementation. Archiving
@@ -794,14 +748,13 @@ retains transactions and is not deletion.
 | `POST` | `/transactions/search` | Search transactions with structured filters, pagination and sorting | 200 |
 | `POST` | `/transactions` | Create a manually entered transaction from JSON | 201 |
 | `GET` | `/transactions/{transaction_id}` | Retrieve one transaction | 200 |
-| `PATCH` | `/transactions/{transaction_id}` | Update permitted fields; manual category changes set the category lock | 200 |
-| `DELETE` | `/transactions/{transaction_id}` | Delete a manually entered transaction | 204 |
+| `POST` | `/transactions/{transaction_id}/reverse` | Proposed linked reversing entry preserving the original | 201; detailed schema pending |
 
-Following FR-TXN-4/5, imported amounts, dates and descriptions are read-only.
-Imported transactions may have their category and note edited, but cannot be
-individually deleted; removal uses import-batch reversion. A request to clear a
-manual category lock needs an explicit update contract before rule reapplication
-can change that transaction. Transaction currency comes from the selected account.
+Following FR-TXN-4/5 and ADR 0013, transaction facts, category and note are
+immutable. Corrections create reversing and replacement entries. Running balances
+are maintained projections that can be rebuilt. Transaction currency comes from
+the selected account. No transaction update or deletion endpoint is exposed.
+
 
 #### CSV imports
 
@@ -852,7 +805,7 @@ must be specified before enabling profile mutation.
 | `PATCH` | `/category-rules/{rule_id}` | Edit matching criteria, target category or priority | 200 |
 | `DELETE` | `/category-rules/{rule_id}` | Delete a rule | 204 |
 | `POST` | `/category-rules/preview` | Preview a proposed rule's matches without applying it | 200 |
-| `POST` | `/categorisation-runs` | Apply rules to eligible unlocked transactions | 200 |
+| — | — | Historical categorisation runs removed under ADR 0013 | — |
 
 Groups contain categories, and transactions reference leaf categories only.
 Deletion/reassignment policies must preserve that invariant and define protection
@@ -904,7 +857,7 @@ for older indicative PRD paths:
   `/imports/preview` and `/imports/confirm` paths.
 - Draft deletion and confirmed-batch reversion have separate operations; the
   PRD's `DELETE /imports/{id}` reversion proposal requires alignment.
-- `/categorisation-runs` replaces the indicative `/category-rules/apply`.
+- Historical categorisation runs are superseded by ADR 0013. Rules apply before creation.
 - `/dashboard` replaces the indicative `/dashboard/summary`.
 
 ### 5.4 Import Contract
@@ -1017,8 +970,10 @@ erDiagram
         char currency "ISO 4217"
         text iban "Nullable"
         numeric opening_balance
-        date opening_date "Nullable"
+        numeric balance "Server-maintained, includes future entries"
+        date opening_date
         boolean archived
+        timestamptz archived_at "Nullable"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -1096,6 +1051,8 @@ erDiagram
         boolean enabled
     }
 
+    FINANCIAL_TRANSACTION o|--o| FINANCIAL_TRANSACTION : reverses
+
     FINANCIAL_TRANSACTION {
         uuid id PK
         uuid account_id FK
@@ -1104,12 +1061,16 @@ erDiagram
         date booking_date
         date value_date "Nullable"
         numeric amount
+        numeric balance_after "Server-maintained projection"
+        numeric bank_reported_balance "Nullable, source observation"
+        bigint day_sequence "Unique per account and booking date"
+        uuid reversal_of_id FK "Nullable, unique, original transaction"
         char currency "Matches account currency"
         text description
         text counterparty "Nullable"
         text note "Nullable"
         boolean category_locked
-        text source "manual or csv"
+        text source "manual csv or reversal"
         text fingerprint "Nullable for manual entry"
         integer occurrence_index "Nullable for manual entry"
         timestamptz created_at
@@ -1191,11 +1152,29 @@ v0.1 alternatives, not a requirement to duplicate a v1.0 provider's credentials.
   decide the accepted input bounds before migration design and reject unsupported
   precision rather than silently rounding on insert. Rates need greater precision
   than displayed amounts. Reject non-finite numeric values.
-- The opening balance defaults to zero if omitted. Booking/value dates are
-  calendar dates; audit fields are timestamps. The exact opening-date cutoff
-  semantics must be resolved before computing balances from overlapping statements.
-- Account balance is derived from opening balance plus included transactions.
-  Converted balances and dashboard totals are not independently editable columns.
+- The opening balance defaults to zero at the start of the required opening
+  date, before transactions booked that day. Booking/value dates are calendar
+  dates and audit fields are timestamps. Reject earlier transactions. Opening
+  values remain editable, but a new opening date cannot exclude existing entries.
+- Under [ADR 0013](adr/0013-immutable-transactions-and-maintained-balances.md),
+  store the current account balance and each transaction's `balance_after` as
+  server-maintained exact decimals. Include all recorded entries, even future
+  booking dates. Preserve a separate nullable `bank_reported_balance`; manually
+  recorded money may legitimately cause a difference.
+- Order by booking date and a persistent account/day sequence. Preserve bank
+  order within each incoming same-day group and append that group in source order
+  after existing same-day entries. Independent imports and manual entries use the
+  sequence fallback. Enforce uniqueness on account, booking date and sequence.
+- Serialize balance-affecting writes per account. Insert facts and update running
+  and account balances atomically. Backdated inserts recalculate the affected
+  suffix; opening-value edits recalculate the full history. Rebuilds from recorded
+  facts and opening values must reproduce stored projections. Converted balances
+  and dashboard totals are calculated separately.
+- Transactions are immutable, including category and note. Corrections and import
+  reversion append linked reversing entries. Recalculation may update stored
+  balance projections. Reversals negate the original amount, use the same account
+  and currency, and are unique per original entry. Bank-reported balances remain
+  source observations and are absent on synthetic reversing entries.
 
 #### Imports and duplicate protection
 
@@ -1208,8 +1187,10 @@ v0.1 alternatives, not a requirement to duplicate a v1.0 provider's credentials.
 - `(import_id, line_number)` is unique in `IMPORT_ROW`. Invalid rows may have null
   parsed values and a safe error code; they are not inserted as transactions.
 - CSV transactions require an import ID, fingerprint and occurrence index.
-  Manual transactions have no import ID and are excluded from CSV duplicate
-  detection, following FR-MAN-1/2. Check constraints connect these fields to `source`.
+  Manual and reversing entries are excluded from CSV duplicate detection. A reversal
+  links to its original and can retain a batch association for reversion auditing.
+  Define source-specific checks for these fields. Retained originals continue to
+  reserve their duplicate keys after reversal.
 - The fingerprint uses account, booking date, exact amount and normalized
   description. An occurrence index distinguishes legitimate identical movements.
   Define its deterministic assignment and overlap behavior before implementing
@@ -1225,8 +1206,9 @@ v0.1 alternatives, not a requirement to duplicate a v1.0 provider's credentials.
   reference `CATEGORY`, never `CATEGORY_GROUP`.
 - Every transaction has a leaf category. Omitting one resolves to the user's
   built-in Uncategorised category rather than creating a dangling reference.
-- A manual category change sets `category_locked=true` atomically. Rule runs skip
-  locked rows, including when a manual edit races a rule run.
+- Choose the category before creation through a rule or manual selection. Category
+  and note remain immutable afterward under ADR 0013. `category_locked` records
+  the initial manual choice; historical rule reruns are removed.
 - Rules have an explicit priority. Define deterministic tie handling or enforce
   unique priorities per user. Regular expressions require bounded evaluation.
 - Category/group deletion and reassignment policies remain open. Protect built-in
@@ -1272,9 +1254,10 @@ an index to every column.
 
 | Operation | Atomic database boundary |
 |---|---|
-| Manual transaction creation | Validate accessible account, insert transaction, commit before returning success |
-| CSV confirmation | Lock draft, validate state, insert nonduplicate rows, store counts, mark confirmed, commit |
-| Manual category edit | Change category and lock flag together |
+| Manual transaction creation | Lock accessible account, validate cutoff, insert immutable entry, update running/account balances, commit |
+| CSV confirmation | Lock draft and account, validate state/cutoff, insert ordered nonduplicate rows, recalculate balances, store counts, mark confirmed, commit |
+| Opening-value change | Validate cutoff, recalculate all running balances and account balance, commit |
+| Transaction correction | Lock account, append reversal/replacement, update affected balances, commit |
 | Transfer confirmation | Validate both legs, establish exclusive pair membership, commit |
 | Goal change | Validate linked account and applicable uniqueness constraint, save goal, commit |
 | Account deletion | Deferred until goals, rules, transfer links and import-history behavior are decided |
@@ -1287,10 +1270,11 @@ coordinate locking so an expiring draft cannot be partially confirmed.
 
 For a confirmed import, a repeated confirmation returns the saved result.
 Confirmation of expired or reverted imports is rejected under the state contract
-to be completed in section 5.4. Confirmed-batch reversion removes exactly its
-created transactions and updates batch status atomically. It must also reconcile
-transfer links and derived totals without deleting unrelated manual transactions.
-Detailed reversion and history-retention policies remain open.
+to be completed in section 5.4. Confirmed-batch reversion appends linked reversing
+entries for exactly its created transactions, using their original booking dates.
+Retain original rows and duplicate keys. Update batch status and calculated balances
+atomically, and make retries idempotent. Transfer-link handling and the detailed
+reversion response schema must be specified before implementation.
 
 Financial writes use explicit commit/rollback. Unexpected failures do not leave
 partial operations. User-facing errors contain no SQL or connection details.

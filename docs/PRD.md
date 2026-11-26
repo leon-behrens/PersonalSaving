@@ -114,11 +114,16 @@ accidentally exposed port does not expose the user's finances.
 - **FR-ACC-2:** An account has: name, type (checking, savings, cash, credit
   card), currency, optional IBAN, optional opening balance and opening date.
 - **FR-ACC-3:** An account's current balance is the opening balance plus the sum
-  of its transactions. It is derived, never stored as an independently editable
-  field.
+  of all recorded transactions, including future-dated entries. Store and maintain
+  it atomically as a read-only value under ADR 0013. Each transaction has a stored
+  running `balance_after` and an optional separate bank-reported balance. Manual
+  entries may make calculated balances differ from bank-reported balances.
+  The opening balance is measured at the start of the required opening date.
+  Reject earlier transactions. Opening values may be edited with atomic balance
+  recalculation, provided the new date does not exclude existing transactions.
 - **FR-ACC-4:** Archiving an account hides it from the dashboard while retaining
-  its transactions. Deleting an account requires confirmation and removes its
-  transactions.
+  its transactions. Permanent account deletion is deferred and cannot
+  cascade-delete immutable transaction history.
 - **FR-ACC-5:** An account's currency cannot be changed once it has
   transactions.
 
@@ -132,11 +137,12 @@ accidentally exposed port does not expose the user's finances.
 - **FR-TXN-3:** The user can list transactions with filtering by account, date
   range, category, amount range and free-text search on the description, with
   pagination and sorting.
-- **FR-TXN-4:** The user can edit the category and note of any transaction.
-  Amount, date and description of an imported transaction are read-only; manually
-  entered transactions are fully editable.
-- **FR-TXN-5:** The user can delete a manually entered transaction. Imported
-  transactions are removed only by reverting their import batch.
+- **FR-TXN-4:** All transactions are immutable after creation, including category
+  and note. Corrections use linked reversing entries and new replacement entries.
+  Server-maintained running balances may be recalculated under ADR 0013.
+- **FR-TXN-5:** Transactions cannot be individually deleted. A correction preserves
+  the original and adds a linked reversing entry. Import reversion uses the same
+  append-only mechanism and is idempotent.
 - **FR-TXN-6:** Amounts are stored as exact decimals. Binary floating point is
   prohibited anywhere in the storage, transport or aggregation of monetary
   values.
@@ -166,8 +172,10 @@ accidentally exposed port does not expose the user's finances.
   exists is skipped.
 - **FR-IMP-8:** The import result reports the number of rows inserted, skipped
   as duplicates, and failed.
-- **FR-IMP-9:** An import batch can be reverted, removing exactly the
-  transactions it created.
+- **FR-IMP-9:** An import batch can be reverted by appending linked reversing
+  entries for exactly the transactions it created. Preserve originals, cancel
+  their effect from the original booking dates, and update calculated balances
+  and batch state atomically. Retrying must not create additional reversals.
 - **FR-IMP-10:** Uploads are bounded by a maximum file size, a maximum row count
   and a parse timeout, all configurable. The limits are enforced before the file
   is read into memory, and exceeding one returns an error naming the limit and
@@ -199,11 +207,10 @@ accidentally exposed port does not expose the user's finances.
   wins.
 - **FR-CAT-4:** Rules are applied automatically during import. Transactions
   matching no rule are assigned to the built-in **Uncategorised** category.
-- **FR-CAT-5:** The user can override the category of any transaction manually.
-  A manual override locks that transaction against further automatic
-  categorisation.
-- **FR-CAT-6:** The user can re-run all rules over existing transactions. This
-  affects only transactions that have not been manually overridden.
+- **FR-CAT-5:** The user can choose a manual category before a transaction is
+  created. The category and note are immutable after creation under ADR 0013.
+- **FR-CAT-6:** Rule changes apply to new transactions. Existing transaction
+  categories remain unchanged. Rule previews may inspect historical transactions.
 - **FR-CAT-7:** When creating a rule, the UI previews how many existing
   transactions it would match.
 - **FR-CAT-8:** The dashboard surfaces the count of uncategorised transactions
@@ -384,15 +391,16 @@ REST, with OpenAPI as the published contract.
 | `GET` `PATCH` `DELETE` | `/accounts/{id}` | Read, update, delete |
 | `POST` | `/transactions/search` | Filtered, paginated transaction search |
 | `POST` | `/transactions` | Create manual transaction |
-| `PATCH` `DELETE` | `/transactions/{id}` | Update, delete |
+| `GET` | `/transactions/{id}` | Read immutable transaction |
+| `POST` | `/transactions/{id}/reverse` | Proposed linked reversal, schema pending |
 | `POST` | `/imports/preview` | Upload CSV, receive parse preview |
 | `POST` | `/imports/confirm` | Commit a previewed import |
 | `GET` | `/imports` | List import batches |
-| `DELETE` | `/imports/{id}` | Revert an import batch |
+| `POST` | `/imports/{id}/revert` | Revert through linked reversing entries |
 | `GET` `POST` | `/bank-profiles` | List, create |
 | `GET` `POST` | `/categories` | List, create |
 | `GET` `POST` | `/category-rules` | List, create |
-| `POST` | `/category-rules/apply` | Re-run rules over existing transactions |
+| — | — | Rules apply before creation; historical rule application is removed |
 | `GET` | `/transfers/suggestions` | Proposed transfer pairs |
 | `POST` | `/transfers` | Confirm a transfer link |
 | `GET` `POST` | `/goals` | List, create |

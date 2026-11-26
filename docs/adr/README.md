@@ -35,3 +35,4 @@ Copy [`template.md`](template.md) to start a new record.
 | [0010](0010-two-level-category-hierarchy.md) | Exactly two category levels, transactions on leaves only | Accepted |
 | [0011](0011-migrations-run-before-the-api-starts.md) | Migrations run as a one-shot container before the API starts | Proposed |
 | [0012](0012-versioned-user-model-and-administrator-boundary.md) | Single-user v0.1, multi-user v1.0 and restricted administration | Accepted |
+| [0013](0013-immutable-transactions-and-maintained-balances.md) | Immutable transactions and maintained account/running balances | Accepted |
